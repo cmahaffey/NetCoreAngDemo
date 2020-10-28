@@ -8,7 +8,7 @@ namespace API.Extensions
     {
         public static void AddPaginationHeader(this HttpResponse response, int currentPage, int itemsPerPage, int totalItems, int totalPages)
         {
-            var paginationHeader = new PaginationHeader(currentPage, itemsPerPage, totalItems, totalPages);
+            var paginationHeader = new PaginationHeader(currentPage, totalPages, totalItems, itemsPerPage);
             var options = new JsonSerializerOptions
             {
                 PropertyNamingPolicy = JsonNamingPolicy.CamelCase

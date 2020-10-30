@@ -13,21 +13,10 @@ export class HomeComponent implements OnInit {
   constructor(private http:HttpClient) { }
 
   ngOnInit(): void {
-    this.getUsers();
   }
 
   registerToggle() {
     this.registerMode = !this.registerMode;
-  }
-
-  //TODO: Move to component we want to actually usee this in
-  getUsers() {
-    return this.http.get('https://localhost:5001/Api/Users')
-      .subscribe(users => {
-        this.users = users;
-      }, error => {
-        console.error();         
-      });
   }
 
   cancelRegisterMode(event: boolean) {

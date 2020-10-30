@@ -11,6 +11,7 @@ using API.Entities;
 using API.Interfaces;
 using AutoMapper;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Infrastructure;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
@@ -21,14 +22,16 @@ namespace API.Controllers
 {
     public class AccountController : BaseApiController
     {
-        private readonly DataContext _context;
         private readonly ITokenService _tokenService;
         private readonly IMapper _mapper;
-        public AccountController(DataContext context, ITokenService tokenService, IMapper mapper)
+        private readonly SignInManager<AppUser> _signInManager;
+        private readonly UserManager<AppUser> _userManager;
+        public AccountController(UserManager<AppUser> userManager, SignInManager<AppUser> signInManager, ITokenService tokenService, IMapper mapper)
         {
+            _userManager = userManager;
+            _signInManager = signInManager;
             _mapper = mapper;
             _tokenService = tokenService;
-            _context = context;
 
         }
 
@@ -39,19 +42,20 @@ namespace API.Controllers
 
             var user = _mapper.Map<AppUser>(registerDTO);
 
-            using var hmac = new HMACSHA512();
-
             user.UserName = registerDTO.UserName.ToLower();
-            user.PasswordHash = hmac.ComputeHash(Encoding.UTF8.GetBytes(registerDTO.Password));
-            user.PasswordSalt = hmac.Key;
+            
+            var result = await _userManager.CreateAsync(user, registerDTO.Password);
+            
+            if (!result.Succeeded) return BadRequest(result.Errors);
 
-            _context.Users.Add(user);
-            await _context.SaveChangesAsync();
+            var roleResult = await _userManager.AddToRoleAsync(user, "Member");
+
+            if (!roleResult.Succeeded) return BadRequest(result.Errors);
 
             return new UserDTO
             {
                 username = user.UserName,
-                Token = _tokenService.CreateToken(user),
+                Token = await _tokenService.CreateToken(user),
                 KnownAs = user.KnownAs,
                 Gender = user.Gender
             };
@@ -60,25 +64,20 @@ namespace API.Controllers
         [HttpPost("login")]
         public async Task<ActionResult<UserDTO>> Login(LoginDTO loginDTO)
         {
-            var user = await _context.Users
+            var user = await _userManager.Users
                 .Include(p => p.Photos)
                 .SingleOrDefaultAsync(user => user.UserName == loginDTO.username.ToLower());
 
             if (user == null) return Unauthorized("Invalid Username");
 
-            using var hmac = new HMACSHA512(user.PasswordSalt);
+            var result = await _signInManager.CheckPasswordSignInAsync(user, loginDTO.password, false);
 
-            var computedHash = hmac.ComputeHash(Encoding.UTF8.GetBytes(loginDTO.password));
-
-            for (int i = 0; i < computedHash.Length; i++)
-            {
-                if (computedHash[i] != user.PasswordHash[i]) return Unauthorized("Invalid Password");
-            }
+            if (!result.Succeeded) return Unauthorized();
 
             return new UserDTO
             {
                 username = user.UserName,
-                Token = _tokenService.CreateToken(user),
+                Token = await _tokenService.CreateToken(user),
                 PhotoUrl = user.Photos.FirstOrDefault(photo => photo.IsMain)?.Url,
                 KnownAs = user.KnownAs,
                 Gender = user.Gender
@@ -87,7 +86,7 @@ namespace API.Controllers
 
         private async Task<bool> UserExists(string username)
         {
-            return await _context.Users
+            return await _userManager.Users
                 .AnyAsync(user => user.UserName == username.ToLower());
         }
     }
